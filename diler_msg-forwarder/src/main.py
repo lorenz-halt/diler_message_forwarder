@@ -13,6 +13,7 @@ EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
 WEBSITE_URL = os.getenv('DILER_URL')
+LIBREOFFICE_PATH = os.getenv('LIBREOFFICE_PATH')
 
 
 
@@ -35,7 +36,7 @@ def main():
             to_addresses = [addr.strip() for addr in to_addresses.split(',')]
 
         print(f"Verarbeite Account: {username}")
-        with MessageScraper(WEBSITE_URL, username, password) as scraper:
+        with MessageScraper(WEBSITE_URL, username, password, libreoffice_path=LIBREOFFICE_PATH) as scraper:
             unread_messages = scraper.get_unread_messages()
             processed_message_hashes = set()
             for msg in unread_messages:

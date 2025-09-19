@@ -11,16 +11,18 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import re
+import subprocess
 
 load_dotenv()
 
 class MessageScraper:
-    def __init__(self, url=None, username=None, password=None):
+    def __init__(self, url=None, username=None, password=None, libreoffice_path=None):
         self.session = requests.Session()
         self.base_url = url
         self.username = username
         self.password = password
         self.driver = None
+        self.libreoffice_path = libreoffice_path
 
     def __enter__(self):
         chrome_options = Options()
@@ -34,13 +36,13 @@ class MessageScraper:
         # Delete all files in the attachments folder on exit
         attachments_dir = os.path.join(os.path.dirname(__file__), 'attachments')
         if os.path.exists(attachments_dir):
-            for filename in os.listdir(attachments_dir):
-                file_path = os.path.join(attachments_dir, filename)
-                try:
-                    if os.path.isfile(file_path):
+            for root, dirs, files in os.walk(attachments_dir, topdown=False):
+                for name in files:
+                    file_path = os.path.join(root, name)
+                    try:
                         os.remove(file_path)
-                except Exception as e:
-                    print(f"Error deleting file {file_path}: {e}")
+                    except Exception as e:
+                        print(f"Error deleting file {file_path}: {e}")
         if self.driver:
             self.driver.quit()
             self.driver = None
@@ -164,6 +166,9 @@ class MessageScraper:
                                 with open(local_path, 'wb') as f:
                                     for chunk in r.iter_content(chunk_size=8192):
                                         f.write(chunk)
+                                # If libreoffice_path is set, convert to PDF
+                                if self.libreoffice_path:
+                                    local_path = self.convert_to_pdf_libreoffice(local_path)
                                 attachments.append(local_path)
                             except Exception as e:
                                 print(f"Error downloading attachment {filename}: {e}")
@@ -226,3 +231,19 @@ class MessageScraper:
                 time.sleep(1)
         except Exception as e:
             print(f"Could not mark message {message_id} as read: {e}")
+
+    # Function to convert doc/docx to PDF on Linux
+    def convert_to_pdf_libreoffice(self, in_path):
+        if in_path.lower().endswith((".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", "pdf")):
+            pdf_dir = os.path.join(os.path.dirname(in_path), "convertion")
+            os.makedirs(pdf_dir, exist_ok=True)
+            pdf_path = os.path.join(pdf_dir, os.path.splitext(os.path.basename(in_path))[0] + '.pdf')
+            #pdf_path = os.path.splitext(in_path)[0] + '.pdf'
+        else:
+            return in_path  # No conversion needed
+        try:
+            subprocess.run([self.libreoffice_path, '--headless', '--convert-to', 'pdf', in_path, '--outdir', os.path.dirname(pdf_path)])
+            print(f'Converted {in_path} to {pdf_path}')
+            return pdf_path
+        except:
+            return in_path  # Return original if conversion fails
