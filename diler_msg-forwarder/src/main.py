@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 from dotenv import load_dotenv
 from message_scraper import MessageScraper
 from email_utils import send_email_with_attachments
@@ -13,6 +14,12 @@ SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
 WEBSITE_URL = os.getenv('DILER_URL')
 
+
+
+def create_message_hash(subject, body):
+    """Create a hash of the message subject and body to identify duplicates."""
+    message_content = f"{subject}{body}"
+    return hashlib.sha256(message_content.encode('utf-8')).hexdigest()
 
 
 def main():
@@ -30,8 +37,21 @@ def main():
         print(f"Verarbeite Account: {username}")
         with MessageScraper(WEBSITE_URL, username, password) as scraper:
             unread_messages = scraper.get_unread_messages()
+            processed_message_hashes = set()
             for msg in unread_messages:
                 subject = f"{msg['subject']} ({msg['date']})" if msg.get('date') else msg['subject']
+                
+                # Create hash of message subject and body to check for duplicates
+                message_hash = create_message_hash(msg['subject'], msg['body'])
+                
+                # Skip if this message (subject + body) has already been processed
+                if message_hash in processed_message_hashes:
+                    print(f"Skipping duplicate message: {subject}")
+                    continue
+                
+                # Add hash to set of processed messages
+                processed_message_hashes.add(message_hash)
+                
                 try:
                     send_email_with_attachments(
                         smtp_server=SMTP_SERVER,
