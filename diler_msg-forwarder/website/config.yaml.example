@@ -1,0 +1,26 @@
+cookie:
+  expiry_days: 30
+  key: aaa
+  name: abc
+credentials:
+  usernames:
+    user1:
+      email: 
+      failed_login_attempts: 0
+      first_name: 
+      last_name: 
+      logged_in: false
+      password: abc
+      roles: null
+    user2:
+      email: 
+      failed_login_attempts: 0
+      first_name: 
+      last_name: 
+      logged_in: true
+      password: def
+      password_hint: abc
+      roles:
+      - admin
+pre-authorized:
+- yetanotheremail

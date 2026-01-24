@@ -44,6 +44,7 @@ README.md               # Project documentation
    EMAIL_PASSWORD=yyy
    SMTP_SERVER=mail.host.net
    SMTP_PORT=587
+   LIBREOFFICE_PATH=soffice
    ```
 
    Then create a `accounts.json` file to manage multiple DILER accounts and receiving email adresses:

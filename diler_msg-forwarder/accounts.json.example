@@ -1,0 +1,18 @@
+[
+  {
+    "STREAMLIT_USERNAME": "user1",
+    "DILER_USERNAME": "xyz",
+    "DILER_PASSWORD": "123",
+    "TO_EMAIL_ADDRESS": [
+      ""
+    ]
+  },
+  {
+    "STREAMLIT_USERNAME": "user2",
+    "DILER_USERNAME": "qwer",
+    "DILER_PASSWORD": "asdf",
+    "TO_EMAIL_ADDRESS": [
+      ""
+    ]
+  }
+]
