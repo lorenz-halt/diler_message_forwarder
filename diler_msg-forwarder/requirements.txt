@@ -1,7 +1,9 @@
-requests
-beautifulsoup4
-python-dotenv
-email-validator
-selenium
-lxml
-dotenv
+streamlit==1.52.2
+streamlit-authenticator==0.4.2
+PyYAML==6.0.3
+python-dotenv==1.1.0
+requests==2.32.3
+beautifulsoup4==4.13.4
+selenium==4.33.0
+lxml==5.4.0
+email-validator==2.2.0
