@@ -3,6 +3,12 @@ from yaml.loader import SafeLoader
 import streamlit as st
 import streamlit_authenticator as stauth
 import json
+import os
+import sys
+from dotenv import load_dotenv
+import time
+
+load_dotenv()
 
 # Page configuration
 st.set_page_config(page_title="HaltiBot", layout="centered")
@@ -40,6 +46,7 @@ def load_accounts():
 def save_accounts(accounts):
     """Save DiLer configuration to accounts.json"""
     with open('../accounts.json', 'w', encoding='utf-8') as file:
+        # Use ensure_ascii=False to save passwords and special characters as-is without escaping
         json.dump(accounts, file, indent=2, ensure_ascii=False)
 
 def get_user_account(streamlit_username):
@@ -147,18 +154,48 @@ def new_user_page():
             st.success(f'User "{name_of_registered_user}" registered successfully!')
             st.session_state.new_user_registered = True
             st.session_state.new_username = username_of_registered_user
+            st.session_state.new_user_email = email_of_registered_user
             st.rerun()
     except Exception as e:
         st.error(f"Error during registration: {e}")
 
 def validate_diler_credentials(username, password):
     """
-    Placeholder function to validate Diler credentials.
-    Later this will check the credentials against the actual Diler system.
+    Validate Diler credentials by attempting to log in to the Diler system.
+    Uses the MessageScraper to test if the provided credentials are valid.
+    
+    Args:
+        username: Diler username
+        password: Diler password
+    
+    Returns:
+        True if credentials are valid, False otherwise
     """
-    # TODO: Implement actual Diler credential validation
-    # For now, this is just a placeholder
-    return True
+    try:
+        # Ensure src directory is in path for all imports
+        src_path = os.path.join(os.path.dirname(__file__), '..')
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        
+        from src.message_scraper import MessageScraper
+        
+        # Get DILER_URL and LIBREOFFICE_PATH from environment
+        diler_url = os.getenv('DILER_URL')
+        libreoffice_path = os.getenv('LIBREOFFICE_PATH')
+        
+        if not diler_url:
+            st.error("Error: DILER_URL not configured in environment")
+            return False
+        
+        # Use MessageScraper context manager to test login
+        with MessageScraper(diler_url, username, password, libreoffice_path=libreoffice_path) as scraper:
+            # Try to access unread messages (this triggers the login)
+            return scraper.test_login()
+    
+    except Exception as e:
+        # Invalid credentials or other error
+        st.error(f"DiLer credential validation failed: {str(e)}")
+        return False
 
 def diler_credentials_page():
     """Page to collect Diler credentials after registration"""
@@ -181,20 +218,45 @@ def diler_credentials_page():
             placeholder="Enter your Diler password"
         )
         
+        # Receiving emails input (optional but recommended)
+        receiving_emails = st.text_input(
+            label="Receiving Email Address",
+            placeholder="your@email.com",
+            value=st.session_state.get('new_user_email', ''),
+            help="Email address where forwarded messages will be sent"
+        )
+        
         st.divider()
         
         # Submit button
         if st.button("Complete Setup", use_container_width=True):
             if diler_username and diler_password:
                 # Validate Diler credentials
-                if validate_diler_credentials(diler_username, diler_password):
+                with st.spinner("Verifying Diler credentials..."):
+                    result = validate_diler_credentials(diler_username, diler_password)
+
+                if result:
                     st.success("Diler credentials verified successfully!")
-                    st.info("Setup complete. Redirecting to login...")
                     
-                    # Reset session state and return to login
-                    st.session_state.new_user_registered = False
-                    st.session_state.page = 'login'
-                    st.rerun()
+                    # Save the credentials to accounts.json
+                    streamlit_username = st.session_state.get('new_username')
+                    if streamlit_username and receiving_emails:
+                        try:
+                            save_user_account(streamlit_username, diler_username, diler_password, receiving_emails)
+                            st.balloons()
+                            st.success("Account configuration saved!")
+                            st.info("Setup complete. Redirecting to login...")
+                            
+                            time.sleep(3)
+
+                            # Reset session state and return to login
+                            st.session_state.new_user_registered = False
+                            st.session_state.page = 'login'
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error saving account configuration: {e}")
+                    else:
+                        st.warning("Please enter a receiving email address.")
                 else:
                     st.error("Invalid Diler credentials. Please try again.")
             else:
@@ -284,8 +346,17 @@ def config_page():
         if st.button("Save DiLer Configuration", use_container_width=True):
             if diler_username and diler_password and receiving_emails:
                 try:
-                    save_user_account(username, diler_username, diler_password, receiving_emails)
-                    st.success("DiLer configuration saved successfully!")
+                    #Validate Diler credentials before saving
+                    with st.spinner("Verifying DiLer credentials..."):
+                        result = validate_diler_credentials(diler_username, diler_password)
+                    if not result:
+                        st.error("Invalid DiLer credentials. Please check and try again.")
+                    else:            
+                        save_user_account(username, diler_username, diler_password, receiving_emails)
+                        st.success("DiLer configuration saved successfully!")
+                        st.session_state.page = 'main'
+                        time.sleep(3)
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error saving configuration: {e}")
             else:

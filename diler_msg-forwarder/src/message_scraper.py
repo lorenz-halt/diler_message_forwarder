@@ -2,7 +2,6 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-import email_utils
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -19,8 +18,9 @@ class MessageScraper:
     def __init__(self, url=None, username=None, password=None, libreoffice_path=None):
         self.session = requests.Session()
         self.base_url = url
-        self.username = username
-        self.password = password
+        # Ensure password is treated as string without any encoding issues
+        self.username = str(username) if username else None
+        self.password = str(password) if password else None
         self.driver = None
         self.libreoffice_path = libreoffice_path
 
@@ -46,6 +46,37 @@ class MessageScraper:
         if self.driver:
             self.driver.quit()
             self.driver = None
+
+    def test_login(self):
+        """Test if login credentials are valid. Returns True if login succeeds, False otherwise."""
+        driver = self.driver
+        wait = WebDriverWait(driver, 20)
+        try:
+            driver.get(self.base_url)
+            wait.until(EC.presence_of_element_located((By.NAME, 'username')))
+            driver.find_element(By.NAME, 'username').send_keys(self.username)
+            driver.find_element(By.NAME, 'password').send_keys(self.password)
+            # Try multiple selectors for the login button
+            try:
+                login_btn = driver.find_element(By.CSS_SELECTOR, 'input[type="submit"]')
+            except Exception:
+                try:
+                    login_btn = driver.find_element(By.XPATH, '//input[@type="submit"]')
+                except Exception:
+                    try:
+                        login_btn = driver.find_element(By.NAME, 'Submit')
+                    except Exception:
+                        return False
+            login_btn.click()
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+            
+            # Switch to messages inbox 
+            driver.get(f'{self.base_url}/messages/inbox')
+            wait.until(EC.presence_of_element_located((By.ID, 'texterMessages')))
+            return True
+        except Exception as e:
+            print(f"Login test failed: {e}")
+            return False
 
     def get_unread_messages(self):
         driver = self.driver
