@@ -93,14 +93,21 @@ def save_config(config):
         yaml.dump(config, file, default_flow_style=False)
 
 def delete_user(username):
-    """Delete a user from config.yaml"""
+    """Delete a user from config.yaml and accounts.json"""
     try:
+        # Delete from config.yaml
         current_config = load_config()
         if 'credentials' in current_config and 'usernames' in current_config['credentials']:
             if username in current_config['credentials']['usernames']:
                 del current_config['credentials']['usernames'][username]
                 save_config(current_config)
-                return True
+        
+        # Delete from accounts.json
+        accounts = load_accounts()
+        accounts = [account for account in accounts if account.get('STREAMLIT_USERNAME') != username]
+        save_accounts(accounts)
+        
+        return True
     except Exception as e:
         st.error(f"Error deleting user: {e}")
     return False
