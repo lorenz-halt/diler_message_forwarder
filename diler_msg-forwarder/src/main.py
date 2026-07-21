@@ -54,6 +54,7 @@ def main():
                 processed_message_hashes.add(message_hash)
                 
                 try:
+                    print(f"Sending email to {to_addresses}:{subject}")
                     send_email_with_attachments(
                         smtp_server=SMTP_SERVER,
                         smtp_port=SMTP_PORT,
