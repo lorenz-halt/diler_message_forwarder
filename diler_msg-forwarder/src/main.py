@@ -23,6 +23,9 @@ def create_message_hash(subject, body):
     return hashlib.sha256(message_content.encode('utf-8')).hexdigest()
 
 
+DRY_RUN = True  # TODO: set to False to actually send emails
+
+
 def main():
     accounts_path = os.path.join(os.path.dirname(__file__), '../accounts.json')
     with open(accounts_path, encoding='utf-8') as f:
@@ -53,6 +56,14 @@ def main():
                 # Add hash to set of processed messages
                 processed_message_hashes.add(message_hash)
                 
+                if DRY_RUN:
+                    print(f"[DRY RUN] An: {to_addresses}")
+                    print(f"[DRY RUN] Betreff: {subject}")
+                    print(f"[DRY RUN] Anhänge: {msg['attachments']}")
+                    print(f"[DRY RUN] Nachricht:\n{msg['body']}")
+                    print("-" * 60)
+                    continue
+
                 try:
                     print(f"Sending email to {to_addresses}:{subject}")
                     send_email_with_attachments(

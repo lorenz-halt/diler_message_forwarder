@@ -47,30 +47,42 @@ class MessageScraper:
             self.driver.quit()
             self.driver = None
 
-    def test_login(self):
-        """Test if login credentials are valid. Returns True if login succeeds, False otherwise."""
+    def _find_login_button(self):
+        """Find the login submit button, trying multiple selectors."""
+        driver = self.driver
+        for selector_type, selector in [
+            (By.CSS_SELECTOR, 'input[type="submit"]'),
+            (By.XPATH, '//input[@type="submit"]'),
+            (By.NAME, 'Submit'),
+        ]:
+            try:
+                return driver.find_element(selector_type, selector)
+            except Exception:
+                continue
+        return None
+
+    def _login(self):
+        """Log in to the DILER platform. Returns True on success, False on failure."""
         driver = self.driver
         wait = WebDriverWait(driver, 20)
+        driver.get(self.base_url)
+        wait.until(EC.presence_of_element_located((By.NAME, 'username')))
+        driver.find_element(By.NAME, 'username').send_keys(self.username)
+        driver.find_element(By.NAME, 'password').send_keys(self.password)
+        login_btn = self._find_login_button()
+        if login_btn is None:
+            return False
+        login_btn.click()
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+        return True
+
+    def test_login(self):
+        """Test if login credentials are valid. Returns True if login succeeds, False otherwise."""
         try:
-            driver.get(self.base_url)
-            wait.until(EC.presence_of_element_located((By.NAME, 'username')))
-            driver.find_element(By.NAME, 'username').send_keys(self.username)
-            driver.find_element(By.NAME, 'password').send_keys(self.password)
-            # Try multiple selectors for the login button
-            try:
-                login_btn = driver.find_element(By.CSS_SELECTOR, 'input[type="submit"]')
-            except Exception:
-                try:
-                    login_btn = driver.find_element(By.XPATH, '//input[@type="submit"]')
-                except Exception:
-                    try:
-                        login_btn = driver.find_element(By.NAME, 'Submit')
-                    except Exception:
-                        return False
-            login_btn.click()
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
-            
-            # Switch to messages inbox 
+            if not self._login():
+                return False
+            driver = self.driver
+            wait = WebDriverWait(driver, 20)
             driver.get(f'{self.base_url}/messages/inbox')
             wait.until(EC.presence_of_element_located((By.ID, 'texterMessages')))
             return True
@@ -82,44 +94,11 @@ class MessageScraper:
         driver = self.driver
         wait = WebDriverWait(driver, 20)
         messages = []
-        driver.get(self.base_url)
-        wait.until(EC.presence_of_element_located((By.NAME, 'username')))
-        driver.find_element(By.NAME, 'username').send_keys(self.username)
-        driver.find_element(By.NAME, 'password').send_keys(self.password)
-        # Try multiple selectors for the login button
-        try:
-            login_btn = driver.find_element(By.CSS_SELECTOR, 'input[type="submit"]')
-        except Exception:
-            try:
-                login_btn = driver.find_element(By.XPATH, '//input[@type="submit"]')
-            except Exception:
-                try:
-                    login_btn = driver.find_element(By.NAME, 'Submit')
-                except Exception:
-                    print(driver.page_source)
-                    raise Exception('Login button not found. See page source above.')
-        login_btn.click()
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
-        
-        # Switch to messages inbox 
-        driver.get(f'{self.base_url}/messages/inbox')
-        wait.until(EC.presence_of_element_located((By.ID, 'texterMessages')))
-        
-        # Select '365 Tage' (all messages)
-        try:
-            btn_365 = driver.find_element(By.XPATH, '//label[@for="ts4"]')
-            btn_365.click()
-            time.sleep(1)
-        except Exception:
-            print("365 Tage button not found, skipping.")
-        
-        # Select 'Ungelesene' (unread)
-        try:
-            btn_unread = driver.find_element(By.XPATH, '//label[@for="mt_read_status_unread"]')
-            btn_unread.click()
-            time.sleep(1)
-        except Exception:
-            print("Ungelesene button not found, skipping.")
+        if not self._login():
+            print(driver.page_source)
+            raise Exception('Login button not found. See page source above.')
+
+        self._navigate_to_inbox()
 
         # Work on the messages table
         messages_table = driver.find_element(By.ID, 'texterMessages')
@@ -230,30 +209,28 @@ class MessageScraper:
                 print(f"Error processing message {message_id}: {e}")
         return messages
 
-    def mark_message_as_read(self, message_id):
+    def _navigate_to_inbox(self):
+        """Navigate to the messages inbox and apply the '365 days / unread' filters."""
         driver = self.driver
         wait = WebDriverWait(driver, 20)
-        
-        # Switch to messages inbox 
         driver.get(f'{self.base_url}/messages/inbox')
         wait.until(EC.presence_of_element_located((By.ID, 'texterMessages')))
-        
-        # Select '365 Tage' (all messages)
+
         try:
-            btn_365 = driver.find_element(By.XPATH, '//label[@for="ts4"]')
-            btn_365.click()
+            driver.find_element(By.XPATH, '//label[@for="ts4"]').click()
             time.sleep(1)
         except Exception:
             print("365 Tage button not found, skipping.")
-        
-        # Select 'Ungelesene' (unread)
+
         try:
-            btn_unread = driver.find_element(By.XPATH, '//label[@for="mt_read_status_unread"]')
-            btn_unread.click()
+            driver.find_element(By.XPATH, '//label[@for="mt_read_status_unread"]').click()
             time.sleep(1)
         except Exception:
             print("Ungelesene button not found, skipping.")
 
+    def mark_message_as_read(self, message_id):
+        self._navigate_to_inbox()
+        driver = self.driver
         try:
             read_btn = driver.find_element(By.XPATH, f'//tr[@id="{message_id}"]//button[contains(@id, "read{message_id}")]')
             icon = read_btn.find_element(By.TAG_NAME, 'i')
@@ -265,7 +242,7 @@ class MessageScraper:
 
     # Function to convert doc/docx to PDF on Linux
     def convert_to_pdf_libreoffice(self, in_path):
-        if in_path.lower().endswith((".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", "pdf")):
+        if in_path.lower().endswith((".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".pdf")):
             pdf_dir = os.path.join(os.path.dirname(in_path), "convertion")
             os.makedirs(pdf_dir, exist_ok=True)
             pdf_path = os.path.join(pdf_dir, os.path.splitext(os.path.basename(in_path))[0] + '.pdf')
@@ -273,8 +250,13 @@ class MessageScraper:
         else:
             return in_path  # No conversion needed
         try:
-            subprocess.run([self.libreoffice_path, '--headless', '--convert-to', 'pdf', in_path, '--outdir', os.path.dirname(pdf_path)])
+            subprocess.run(
+                [self.libreoffice_path, '--headless', '--convert-to', 'pdf', in_path, '--outdir', os.path.dirname(pdf_path)],
+                check=True,
+                capture_output=True,
+            )
             print(f'Converted {in_path} to {pdf_path}')
             return pdf_path
-        except:
+        except Exception as e:
+            print(f'PDF conversion failed for {in_path}: {e}')
             return in_path  # Return original if conversion fails
