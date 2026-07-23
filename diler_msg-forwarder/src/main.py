@@ -39,8 +39,9 @@ def main():
             to_addresses = [addr.strip() for addr in to_addresses.split(',')]
 
         print(f"Verarbeite Account: {username}")
+        blocked_senders = [s.lower().strip() for s in account.get('BLOCKED_SENDERS', [])]
         with MessageScraper(WEBSITE_URL, username, password, libreoffice_path=LIBREOFFICE_PATH) as scraper:
-            unread_messages = scraper.get_unread_messages()
+            unread_messages = scraper.get_unread_messages(blocked_senders=blocked_senders)
             processed_message_hashes = set()
             for msg in unread_messages:
                 subject = f"{msg['subject']} ({msg['date']})" if msg.get('date') else msg['subject']
@@ -55,7 +56,14 @@ def main():
                 
                 # Add hash to set of processed messages
                 processed_message_hashes.add(message_hash)
-                
+
+                # Check sender blocklist – mark as read but do not forward
+                sender = msg.get('sender', '')
+                if any(blocked in sender.lower().strip() for blocked in blocked_senders):
+                    print(f"Skipping blocked sender '{sender}': {subject}")
+                    scraper.mark_message_as_read(msg['id'])
+                    continue
+
                 if DRY_RUN:
                     print(f"[DRY RUN] An: {to_addresses}")
                     print(f"[DRY RUN] Betreff: {subject}")

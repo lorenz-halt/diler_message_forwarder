@@ -20,6 +20,8 @@ if 'new_user_registered' not in st.session_state:
     st.session_state.new_user_registered = False
 if 'admin_emails_list' not in st.session_state:
     st.session_state.admin_emails_list = None
+if 'blocked_senders_list' not in st.session_state:
+    st.session_state.blocked_senders_list = None
 
 with open('./config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
@@ -57,10 +59,11 @@ def get_user_account(streamlit_username):
             return account
     return None
 
-def save_user_account(streamlit_username, diler_username, diler_password, receiving_emails):
+def save_user_account(streamlit_username, diler_username, diler_password, receiving_emails, blocked_senders=None):
     """Save or update account configuration for a Streamlit user"""
     accounts = load_accounts()
-    
+    blocked_senders = blocked_senders or []
+
     # Find and update existing account or create new one
     account_found = False
     for account in accounts:
@@ -68,17 +71,19 @@ def save_user_account(streamlit_username, diler_username, diler_password, receiv
             account['DILER_USERNAME'] = diler_username
             account['DILER_PASSWORD'] = diler_password
             account['TO_EMAIL_ADDRESS'] = [e.strip() for e in receiving_emails.split(',')]
+            account['BLOCKED_SENDERS'] = blocked_senders
             account_found = True
             break
-    
+
     if not account_found:
         accounts.append({
             'STREAMLIT_USERNAME': streamlit_username,
             'DILER_USERNAME': diler_username,
             'DILER_PASSWORD': diler_password,
-            'TO_EMAIL_ADDRESS': [e.strip() for e in receiving_emails.split(',')]
+            'TO_EMAIL_ADDRESS': [e.strip() for e in receiving_emails.split(',')],
+            'BLOCKED_SENDERS': blocked_senders,
         })
-    
+
     save_accounts(accounts)
     return True
 
@@ -127,6 +132,7 @@ def main():
     with col_settings:
         if st.button("⚙️ DiLer Bot Settings", use_container_width=True):
             st.session_state.page = 'settings'
+            st.session_state.blocked_senders_list = None  # reload from DB on open
             st.rerun()
     
     with col_logout:
@@ -358,8 +364,9 @@ def config_page():
                         result = validate_diler_credentials(diler_username, diler_password)
                     if not result:
                         st.error("Invalid DiLer credentials. Please check and try again.")
-                    else:            
-                        save_user_account(username, diler_username, diler_password, receiving_emails)
+                    else:
+                        blocked = st.session_state.get('blocked_senders_list') or []
+                        save_user_account(username, diler_username, diler_password, receiving_emails, blocked)
                         st.success("DiLer configuration saved successfully!")
                         st.session_state.page = 'main'
                         time.sleep(3)
@@ -368,7 +375,65 @@ def config_page():
                     st.error(f"Error saving configuration: {e}")
             else:
                 st.warning("Please fill in all fields")
-    
+
+    st.divider()
+
+    # Section: Blocked Senders
+    st.subheader("🚫 Gesperrte Absender")
+    st.caption("Nachrichten dieser Absender werden als gelesen markiert, aber nicht per E-Mail weitergeleitet.")
+
+    col1, col2, col3 = st.columns([1, 4, 1])
+    with col2:
+        # Initialise session state from accounts.json on first render
+        if st.session_state.blocked_senders_list is None:
+            st.session_state.blocked_senders_list = list(
+                existing_account.get('BLOCKED_SENDERS', []) if existing_account else []
+            )
+
+        blocked_list = st.session_state.blocked_senders_list
+
+        for idx, sender in enumerate(blocked_list):
+            col_sender, col_remove = st.columns([5, 1])
+            with col_sender:
+                st.write(f"🚫 {sender}")
+            with col_remove:
+                if st.button("➖", key=f"remove_sender_{idx}", help="Absender entfernen"):
+                    st.session_state.blocked_senders_list.pop(idx)
+                    st.rerun()
+
+        st.write("**Absender hinzufügen:**")
+        col_input, col_add = st.columns([5, 1])
+        with col_input:
+            new_sender = st.text_input(
+                label="Neuer Absender",
+                placeholder="z.B. Max Mustermann",
+                label_visibility="collapsed"
+            )
+        with col_add:
+            if st.button("➕", help="Absender hinzufügen"):
+                name = new_sender.strip()
+                if name:
+                    if name not in st.session_state.blocked_senders_list:
+                        st.session_state.blocked_senders_list.append(name)
+                        st.rerun()
+                    else:
+                        st.warning("Absender ist bereits in der Sperrliste.")
+                else:
+                    st.warning("Bitte einen Absendernamen eingeben.")
+
+        if st.button("Sperrliste speichern", use_container_width=True):
+            try:
+                save_user_account(
+                    username,
+                    existing_account.get('DILER_USERNAME', '') if existing_account else '',
+                    existing_account.get('DILER_PASSWORD', '') if existing_account else '',
+                    ', '.join(existing_account.get('TO_EMAIL_ADDRESS', [])) if existing_account else '',
+                    st.session_state.blocked_senders_list,
+                )
+                st.success("Sperrliste gespeichert!")
+            except Exception as e:
+                st.error(f"Fehler beim Speichern: {e}")
+
     st.divider()
     
     # Section 2: Admin Configuration (only for admin users)

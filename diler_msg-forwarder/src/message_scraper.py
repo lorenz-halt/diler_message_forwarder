@@ -90,7 +90,8 @@ class MessageScraper:
             print(f"Login test failed: {e}")
             return False
 
-    def get_unread_messages(self):
+    def get_unread_messages(self, blocked_senders=None):
+        blocked_senders = [s.lower().strip() for s in (blocked_senders or [])]
         driver = self.driver
         wait = WebDriverWait(driver, 20)
         messages = []
@@ -124,6 +125,7 @@ class MessageScraper:
             try:
                 elem = driver.find_element(By.ID, message_id)
                 sender = elem.find_element(By.CSS_SELECTOR, '.sender').text
+                is_blocked = any(b in sender.lower().strip() for b in blocked_senders)
                 message_html = elem.find_element(By.CSS_SELECTOR, '.message-text .texterMessage').get_attribute('innerHTML')
                 # Extract date from the row (e.g., <td class="date-time">)
                 try:
@@ -137,57 +139,58 @@ class MessageScraper:
                 attachments = []
                 download_failures = []
                 soup = BeautifulSoup(message_html, 'html.parser')
-                # Now find all download links in the message
-                for a in soup.find_all('a'):
-                    url = a.get('rel') or a.get('href')
-                    if isinstance(url, list):
-                        url = url[0] if url else None
-                    if url and isinstance(url, str) and url.startswith('index.php?option=com_diler'):
-                        match = re.search(r'search=id:(\d+)', url)
-                        if not match:
-                            continue
-                        media_id = match.group(1)
-                        cloud_url = f'{self.base_url}/{url}'
-                        inbox_url = driver.current_url
-                        # Add download link to email body (absolute URL)
-                        a.attrs = {}
-                        a['href']=cloud_url
-                        # Download link for the email body
-                        driver.get(cloud_url)
-                        time.sleep(1)
-                        try:
-                            tr = driver.find_element(By.XPATH, f'//tr[@data-media-id="{media_id}"]')
-                            download_a = tr.find_element(By.CSS_SELECTOR, 'a.fileDownload')
-                            download_url = download_a.get_attribute('href')
-                            filename = download_a.get_attribute('data-filename')
-                            if not filename:
-                                try:
-                                    filename = tr.find_element(By.CSS_SELECTOR, '.fileName.mediaDisplay').get_attribute('title')
-                                except Exception:
-                                    filename = download_a.text or f'file_{media_id}'
-                            local_path = os.path.join(os.path.dirname(__file__), 'attachments', filename)
-                            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                            selenium_cookies = driver.get_cookies()
-                            cookies_dict = {c['name']: c['value'] for c in selenium_cookies}
-                            user_agent = driver.execute_script("return navigator.userAgent;")
-                            headers = {'User-Agent': user_agent}
-                            r = requests.get(download_url, cookies=cookies_dict, headers=headers, stream=True)
+                # Skip attachment download for blocked senders
+                if not is_blocked:
+                    for a in soup.find_all('a'):
+                        url = a.get('rel') or a.get('href')
+                        if isinstance(url, list):
+                            url = url[0] if url else None
+                        if url and isinstance(url, str) and url.startswith('index.php?option=com_diler'):
+                            match = re.search(r'search=id:(\d+)', url)
+                            if not match:
+                                continue
+                            media_id = match.group(1)
+                            cloud_url = f'{self.base_url}/{url}'
+                            inbox_url = driver.current_url
+                            # Add download link to email body (absolute URL)
+                            a.attrs = {}
+                            a['href']=cloud_url
+                            # Download link for the email body
+                            driver.get(cloud_url)
+                            time.sleep(1)
                             try:
-                                with open(local_path, 'wb') as f:
-                                    for chunk in r.iter_content(chunk_size=8192):
-                                        f.write(chunk)
-                                # If libreoffice_path is set, convert to PDF
-                                if self.libreoffice_path:
-                                    local_path = self.convert_to_pdf_libreoffice(local_path)
-                                attachments.append(local_path)
+                                tr = driver.find_element(By.XPATH, f'//tr[@data-media-id="{media_id}"]')
+                                download_a = tr.find_element(By.CSS_SELECTOR, 'a.fileDownload')
+                                download_url = download_a.get_attribute('href')
+                                filename = download_a.get_attribute('data-filename')
+                                if not filename:
+                                    try:
+                                        filename = tr.find_element(By.CSS_SELECTOR, '.fileName.mediaDisplay').get_attribute('title')
+                                    except Exception:
+                                        filename = download_a.text or f'file_{media_id}'
+                                local_path = os.path.join(os.path.dirname(__file__), 'attachments', filename)
+                                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                                selenium_cookies = driver.get_cookies()
+                                cookies_dict = {c['name']: c['value'] for c in selenium_cookies}
+                                user_agent = driver.execute_script("return navigator.userAgent;")
+                                headers = {'User-Agent': user_agent}
+                                r = requests.get(download_url, cookies=cookies_dict, headers=headers, stream=True)
+                                try:
+                                    with open(local_path, 'wb') as f:
+                                        for chunk in r.iter_content(chunk_size=8192):
+                                            f.write(chunk)
+                                    # If libreoffice_path is set, convert to PDF
+                                    if self.libreoffice_path:
+                                        local_path = self.convert_to_pdf_libreoffice(local_path)
+                                    attachments.append(local_path)
+                                except Exception as e:
+                                    print(f"Error downloading attachment {filename}: {e}")
+                                    download_failures.append(filename)
                             except Exception as e:
-                                print(f"Error downloading attachment {filename}: {e}")
-                                download_failures.append(filename)
-                        except Exception as e:
-                            print(f"Could not download attachment for media_id {media_id}: {e}")
-                            download_failures.append(f"media_id {media_id}")
-                        driver.get(inbox_url)
-                        time.sleep(1)
+                                print(f"Could not download attachment for media_id {media_id}: {e}")
+                                download_failures.append(f"media_id {media_id}")
+                            driver.get(inbox_url)
+                            time.sleep(1)
                 # Convert soup back to HTML for message_html
                 message_html = str(soup)
                 # If any download failed, add a comment to the email
@@ -200,6 +203,7 @@ class MessageScraper:
                     )
                 messages.append({
                     'id': message_id,
+                    'sender': sender,
                     'subject': subject or f'DILER Nachricht von {sender}',
                     'body': message_html,
                     'attachments': attachments,
